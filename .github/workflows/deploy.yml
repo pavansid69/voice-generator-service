@@ -13,6 +13,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug AWS Region
+        run: |
+          if [ -z "${{ secrets.AWS_REGION }}" ]; then
+            echo "AWS_REGION is NOT set"
+            exit 1
+          else
+            echo "AWS_REGION is set"
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
