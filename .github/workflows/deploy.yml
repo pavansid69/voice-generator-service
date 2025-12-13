@@ -3,7 +3,7 @@ name: Deploy TTS Service
 on:
   push:
     branches:
-      - main   # Deploy only on main
+      - main
 
 jobs:
   build-and-deploy:
@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -20,33 +20,45 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to ECR
-        id: login-ecr
+      - name: Login to ECR (GitHub Actions)
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build Docker image
         run: |
-          docker build -t tts-service:latest .
+          docker build -t tts-service:${{ github.sha }} .
 
       - name: Tag Docker image
         run: |
-          docker tag tts-service:latest ${{ secrets.ECR_REPO }}:latest
+          docker tag tts-service:${{ github.sha }} ${{ secrets.ECR_REPO }}:${{ github.sha }}
+          docker tag tts-service:${{ github.sha }} ${{ secrets.ECR_REPO }}:latest
 
       - name: Push to ECR
         run: |
+          docker push ${{ secrets.ECR_REPO }}:${{ github.sha }}
           docker push ${{ secrets.ECR_REPO }}:latest
 
       - name: Deploy to EC2
-        uses: appleboy/ssh-action@v0.1.9
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            # Pull the latest image
+            set -e
+
+            # Login EC2 to ECR
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+              | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+
             docker pull ${{ secrets.ECR_REPO }}:latest
-            # Stop old container if running
+
             docker stop tts-service || true
             docker rm tts-service || true
-            # Run new container
-            docker run -d --name tts-service -p 8000:8000 ${{ secrets.ECR_REPO }}:latest
+
+            docker run -d \
+              --name tts-service \
+              -p 8000:8000 \
+              -e ELEVENLABS_API_KEY=${{ secrets.ELEVENLABS_API_KEY }} \
+              -e ELEVENLABS_DEFAULT_VOICE_ID=${{ secrets.ELEVENLABS_DEFAULT_VOICE_ID }} \
+              --restart unless-stopped \
+              ${{ secrets.ECR_REPO }}:latest
