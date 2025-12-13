@@ -3,4 +3,4 @@ uvicorn
 python-dotenv
 requests
 # Install directly from GitHub (latest master branch)
-git+https://github.com/elevenlabs/elevenlabs-python.git@master#egg=elevenlabs
+git+https://github.com/elevenlabs/elevenlabs-python.git@main
