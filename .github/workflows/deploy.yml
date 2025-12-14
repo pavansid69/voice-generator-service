@@ -5,19 +5,17 @@ on:
     branches:
       - main  # Trigger deployment only on main branch
 
-env:
-  IMAGE_TAG: ${{ github.sha }}                # Use Git SHA for unique tagging
-  IMAGE_URI: ${{ secrets.ECR_REPO }}:${{ github.sha }}  # Full URI with tag
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: TTS_prod
 
     steps:
+      # 1. Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 2. Debug AWS Region
       - name: Debug AWS Region
         run: |
           if [ -z "${{ secrets.AWS_REGION }}" ]; then
@@ -27,34 +25,46 @@ jobs:
             echo "AWS_REGION is set: ${{ secrets.AWS_REGION }}"
           fi
 
-      - name: Configure AWS credentials (for build/push)
+      # 3. Configure AWS credentials (for build/push)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # 4. Login to ECR
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v1
 
+      # 5. Build Docker image with full ECR URI
       - name: Build Docker image
         run: |
+          IMAGE_TAG=${GITHUB_SHA}
+          IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
           echo "Building Docker image: $IMAGE_URI"
-          docker build -t tts-service:$IMAGE_TAG .
+          docker build -t $IMAGE_URI .
 
+      # 6. Tag Docker image as latest
       - name: Tag Docker image as latest
         run: |
-          docker tag tts-service:$IMAGE_TAG ${{ secrets.ECR_REPO }}:latest
+          IMAGE_TAG=${GITHUB_SHA}
+          IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
+          docker tag $IMAGE_URI ${{ secrets.ECR_REPO }}:latest
           echo "Tagged Docker image as latest: ${{ secrets.ECR_REPO }}:latest"
 
+      # 7. Push both tags to ECR
       - name: Push Docker images to ECR
         run: |
+          IMAGE_TAG=${GITHUB_SHA}
+          IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
           echo "Pushing Docker images to ECR:"
           echo " - $IMAGE_URI"
           echo " - ${{ secrets.ECR_REPO }}:latest"
           docker push $IMAGE_URI
           docker push ${{ secrets.ECR_REPO }}:latest
 
+      # 8. Deploy to EC2
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -63,19 +73,20 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script: |
             set -e
-
+            IMAGE_TAG=${GITHUB_SHA}
+            IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
             echo "Deploying Docker image on EC2: $IMAGE_URI"
 
-            # Login to ECR using EC2 IAM role (no keys needed)
+            # Login to ECR using instance IAM role
             echo "Logging into ECR on EC2 using instance IAM role..."
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
               | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO }}
 
-            # Pull Docker images
+            # Pull images
             docker pull $IMAGE_URI
             docker pull ${{ secrets.ECR_REPO }}:latest
 
-            # Stop old container if running
+            # Stop old container
             docker stop tts-service || true
             docker rm tts-service || true
 
