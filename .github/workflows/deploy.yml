@@ -104,7 +104,7 @@ jobs:
               --name tts-service \
               -p 8000:8000 \
               -e ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY} \
-              -e ELEVENLABS_DEFAULT_VOICE_ID=${ELEVENLABS_DEFAULT_VOICE_ID} \
+              -e ELEVENLABS_VOICE_ID=${ELEVENLABS_VOICE_ID} \
               --restart unless-stopped \
               $IMAGE_URI
             
