@@ -8,33 +8,24 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    environment: TTS_prod 
+    environment: TTS_prod
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Debug AWS Region
-        run: |
-          if [ -z "${{ secrets.AWS_REGION }}" ]; then
-            echo "AWS_REGION is NOT set"
-            exit 1
-          else
-            echo "AWS_REGION is set"
-          fi
-
-      - name: Configure AWS credentials
+      # Build & push Docker image from GitHub Actions
+      - name: Configure AWS credentials (GitHub)
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to ECR (GitHub Actions)
+      - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build Docker image
-        run: |
-          docker build -t tts-service:${{ github.sha }} .
+        run: docker build -t tts-service:${{ github.sha }} .
 
       - name: Tag Docker image
         run: |
@@ -46,6 +37,7 @@ jobs:
           docker push ${{ secrets.ECR_REPO }}:${{ github.sha }}
           docker push ${{ secrets.ECR_REPO }}:latest
 
+      # Deploy on EC2 (No AWS keys required if IAM role attached)
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -55,15 +47,18 @@ jobs:
           script: |
             set -e
 
-            # Login EC2 to ECR
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+            # Login EC2 to ECR (using IAM role, no keys needed)
+            aws ecr get-login-password --region us-east-2 \
               | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
 
+            # Pull latest Docker image
             docker pull ${{ secrets.ECR_REPO }}:latest
 
+            # Stop old container
             docker stop tts-service || true
             docker rm tts-service || true
 
+            # Run new container
             docker run -d \
               --name tts-service \
               -p 8000:8000 \
