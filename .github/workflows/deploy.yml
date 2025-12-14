@@ -54,7 +54,7 @@ jobs:
           docker push $IMAGE_URI
           docker push $LATEST_URI
 
-      - name: Deploy to EC2
+            - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -69,8 +69,10 @@ jobs:
 
             echo "Deploying Docker image on EC2: $IMAGE_URI"
 
-            # Login to ECR using instance IAM role
-            ECR_REGISTRY="${{ secrets.ECR_REPO%%/* }}"
+            # Extract ECR registry from full repo URI (shell syntax)
+            ECR_REGISTRY="${{ secrets.ECR_REPO }}"
+            ECR_REGISTRY="${ECR_REGISTRY%%/*}"
+
             echo "Logging into ECR on EC2 using IAM role for registry: $ECR_REGISTRY"
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
               | docker login --username AWS --password-stdin $ECR_REGISTRY
