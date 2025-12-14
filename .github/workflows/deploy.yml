@@ -86,21 +86,21 @@ jobs:
             # Login to ECR using instance IAM role
             echo "Logging into ECR on EC2 using instance IAM role..."
             aws ecr get-login-password --region ${AWS_REGION} \
-              | docker login --username AWS --password-stdin ${ECR_REPO}
+              | sudo docker login --username AWS --password-stdin ${ECR_REPO}
             
             # Pull images
             echo "Pulling Docker images..."
-            docker pull $IMAGE_URI
-            docker pull ${ECR_REPO}:latest
+            sudo docker pull $IMAGE_URI
+            sudo docker pull ${ECR_REPO}:latest
             
             # Stop old container
             echo "Stopping old container..."
-            docker stop tts-service || true
-            docker rm tts-service || true
+            sudo docker stop tts-service || true
+            sudo docker rm tts-service || true
             
             # Run new container
             echo "Starting new container..."
-            docker run -d \
+            sudo docker run -d \
               --name tts-service \
               -p 8000:8000 \
               -e ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY} \
@@ -112,4 +112,4 @@ jobs:
             
             # Verify container is running
             echo "Verifying container status..."
-            docker ps | grep tts-service
+            sudo docker ps | grep tts-service
