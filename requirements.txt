@@ -2,5 +2,7 @@ fastapi
 uvicorn
 python-dotenv
 requests
+pydantic>=2.0
+pydantic-settings>=2.0
 # Install directly from GitHub (latest master branch)
 git+https://github.com/elevenlabs/elevenlabs-python.git@main
