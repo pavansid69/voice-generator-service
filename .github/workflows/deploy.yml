@@ -3,83 +3,51 @@ name: Deploy TTS Service
 on:
   push:
     branches:
-      - main  # Trigger deployment only on main branch
+      - main  # Trigger only on main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: TTS_prod
+
     steps:
-      # -----------------------------
-      # Checkout repository
-      # -----------------------------
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # -----------------------------
-      # Validate AWS region
-      # -----------------------------
-      - name: Debug AWS Region
-        run: |
-          if [ -z "${{ secrets.AWS_REGION }}" ]; then
-            echo "AWS_REGION is NOT set"
-            exit 1
-          else
-            echo "AWS_REGION is set: ${{ secrets.AWS_REGION }}"
-          fi
-
-      # -----------------------------
-      # Configure AWS credentials (for build & push)
-      # -----------------------------
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (for build/push)
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      # -----------------------------
-      # Login to ECR
-      # -----------------------------
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      # -----------------------------
-      # Build Docker image with full ECR URI
-      # -----------------------------
       - name: Build Docker image
         run: |
           IMAGE_TAG=${GITHUB_SHA}
-          IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
+          IMAGE_URI="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:$IMAGE_TAG"
           echo "Building Docker image: $IMAGE_URI"
-          docker build -t $IMAGE_URI .
+          docker build -t tts-service:$IMAGE_TAG .
 
-      # -----------------------------
-      # Tag image as latest
-      # -----------------------------
       - name: Tag Docker image as latest
         run: |
           IMAGE_TAG=${GITHUB_SHA}
-          IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
-          docker tag $IMAGE_URI ${{ secrets.ECR_REPO }}:latest
-          echo "Tagged Docker image as latest: ${{ secrets.ECR_REPO }}:latest"
+          IMAGE_URI="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:$IMAGE_TAG"
+          docker tag tts-service:$IMAGE_TAG ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:latest
+          echo "Tagged Docker image as latest: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:latest"
 
-      # -----------------------------
-      # Push images to ECR
-      # -----------------------------
       - name: Push Docker images to ECR
         run: |
           IMAGE_TAG=${GITHUB_SHA}
-          IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
+          IMAGE_URI="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:$IMAGE_TAG"
           echo "Pushing Docker images to ECR:"
           echo " - $IMAGE_URI"
-          echo " - ${{ secrets.ECR_REPO }}:latest"
+          echo " - ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:latest"
           docker push $IMAGE_URI
-          docker push ${{ secrets.ECR_REPO }}:latest
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:latest
 
-      # -----------------------------
-      # Deploy to EC2
-      # -----------------------------
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -90,19 +58,19 @@ jobs:
             set -e
 
             IMAGE_TAG=${GITHUB_SHA}
-            IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
+            IMAGE_URI="${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:$IMAGE_TAG"
             echo "Deploying Docker image on EC2: $IMAGE_URI"
 
-            # Login to ECR using IAM role (no keys needed on EC2)
-            echo "Logging into ECR on EC2 using instance IAM role..."
+            # Login to ECR using instance IAM role
+            echo "Logging into ECR on EC2 using IAM role..."
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
               | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
 
             # Pull images
             docker pull $IMAGE_URI
-            docker pull ${{ secrets.ECR_REPO }}:latest
+            docker pull ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPO }}:latest
 
-            # Stop old container
+            # Stop old container if exists
             docker stop tts-service || true
             docker rm tts-service || true
 
