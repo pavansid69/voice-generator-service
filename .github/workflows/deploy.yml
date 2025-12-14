@@ -33,17 +33,15 @@ jobs:
           IMAGE_TAG=${GITHUB_SHA}
           IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
           echo "Building Docker image: $IMAGE_URI"
-          docker build -t tts-service:$IMAGE_TAG .
+          docker build -t $IMAGE_URI .
 
-      # 5. Tag Docker image as latest
       - name: Tag Docker image as latest
         run: |
           IMAGE_TAG=${GITHUB_SHA}
           IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
-          docker tag tts-service:$IMAGE_TAG ${{ secrets.ECR_REPO }}:latest
+          docker tag $IMAGE_URI ${{ secrets.ECR_REPO }}:latest
           echo "Tagged Docker image as latest: ${{ secrets.ECR_REPO }}:latest"
 
-      # 6. Push Docker images
       - name: Push Docker images
         run: |
           IMAGE_TAG=${GITHUB_SHA}
@@ -54,42 +52,42 @@ jobs:
           docker push $IMAGE_URI
           docker push ${{ secrets.ECR_REPO }}:latest
 
-      # 7. Deploy to EC2
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            set -e
+            # 7. Deploy to EC2
+        - name: Deploy to EC2
+          uses: appleboy/ssh-action@v1.0.3
+          with:
+            host: ${{ secrets.EC2_HOST }}
+            username: ${{ secrets.EC2_USER }}
+            key: ${{ secrets.EC2_KEY }}
+            script: |
+              set -e
 
-            IMAGE_TAG=${GITHUB_SHA}
-            IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
-            LATEST_URI="${{ secrets.ECR_REPO }}:latest"
+              IMAGE_TAG=${GITHUB_SHA}
+              IMAGE_URI="${{ secrets.ECR_REPO }}:$IMAGE_TAG"
+              LATEST_URI="${{ secrets.ECR_REPO }}:latest"
 
-            echo "Deploying Docker image on EC2: $IMAGE_URI"
+              echo "Deploying Docker image on EC2: $IMAGE_URI"
 
-            # Extract ECR registry from repo URI
-            ECR_REGISTRY=$(echo ${{ secrets.ECR_REPO }} | cut -d/ -f1)
-            echo "Logging into ECR on EC2 using IAM role for registry: $ECR_REGISTRY"
-            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
-              | docker login --username AWS --password-stdin $ECR_REGISTRY
+              # Extract ECR registry from repo URI
+              ECR_REGISTRY=$(echo ${{ secrets.ECR_REPO }} | cut -d/ -f1)
+              echo "Logging into ECR on EC2 using IAM role for registry: $ECR_REGISTRY"
+              aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+                | docker login --username AWS --password-stdin $ECR_REGISTRY
 
-            # Pull images
-            echo "Pulling images:"
-            docker pull $IMAGE_URI
-            docker pull $LATEST_URI
+              # Pull images
+              echo "Pulling images:"
+              docker pull $IMAGE_URI
+              docker pull $LATEST_URI
 
-            # Stop old container
-            docker stop tts-service || true
-            docker rm tts-service || true
+              # Stop old container
+              docker stop tts-service || true
+              docker rm tts-service || true
 
-            # Run new container
-            docker run -d \
-              --name tts-service \
-              -p 8000:8000 \
-              -e ELEVENLABS_API_KEY=${{ secrets.ELEVENLABS_API_KEY }} \
-              -e ELEVENLABS_DEFAULT_VOICE_ID=${{ secrets.ELEVENLABS_DEFAULT_VOICE_ID }} \
-              --restart unless-stopped \
-              $IMAGE_URI
+              # Run new container
+              docker run -d \
+                --name tts-service \
+                -p 8000:8000 \
+                -e ELEVENLABS_API_KEY=${{ secrets.ELEVENLABS_API_KEY }} \
+                -e ELEVENLABS_DEFAULT_VOICE_ID=${{ secrets.ELEVENLABS_DEFAULT_VOICE_ID }} \
+                --restart unless-stopped \
+                $IMAGE_URI
